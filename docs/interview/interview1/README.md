@@ -1,0 +1,3 @@
+# 手写call和apply和bind
+
+这三个方法都是Function.prototype上的方法
