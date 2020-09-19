@@ -1,4 +1,4 @@
-# 手写call和apply和bind
+# 手写call和apply和bind和new
 
 这三个方法都是Function.prototype上的方法，所有函数都能调用，他们的作用都是用来改变函数的上下文this
 
@@ -253,6 +253,7 @@ function Foo(a, b) {
     console.log(this, a, b)
     return this.name;
 }
+Foo.prototype.age = 10;
 var newFn = Foo.bind(obj,1)
 // var name = newFn(2);
 // console.log(name);
@@ -260,6 +261,152 @@ var newFn = Foo.bind(obj,1)
 //使用new来调用 newFn时，那函数内部的this将指向函数的实例对象
 var newObj = new newFn(2, 3);
 console.log(newObj instanceof Foo)
+// 能拿到原来函数原型上的属性，继承
 console.dir(newObj)
 ```
 
+### 2.bind的实现
+
+我们看出bind函数里面涉及到有高阶函数（柯里化），继承，this指向等多个知识点，那么我们结合前面学习的call和apply的知识来尝试实现一下bind方法
+
+使用es5来实现apply方法：
+
+```javascript
+var obj = {
+    name: 'lisi'
+};
+function Foo(a, b) {
+    console.log(this, a, b)
+    return this.name;
+}
+function toArray(arr, index) {
+    var ret = [], idx = index || 0;
+    for(var i = idx; i < arr.length; i++) {
+        ret[i] = arr[i];
+    }
+    return ret;
+}
+Function.prototype.myBind = function() {
+    if(typeof this !== 'function') {
+        throw new Error('apply方法只能被函数调用')
+    }
+    var rest = toArray(arguments)
+    var target = rest.shift();
+     if(target == null) {
+        target = window
+    }
+    var that = this;
+    target.fn = this;
+    // 返回一个函数
+   /* return function() {
+        var args = toArray(arguments);
+        var res = eval('target.fn('+rest.concat(args)+')');
+        delete target.fn;
+        return res;
+    } */
+    function Fn() {}
+    function bFound() {
+        if(this instanceof bFound) {
+            // 被new调用，当前函数中this要指向bFound
+            target = this;
+            target.fn = that;
+        }
+        var args = toArray(arguments);
+        var res = eval('target.fn('+rest.concat(args)+')');
+        delete target.fn;
+        return res;
+    }
+    Fn.prototype = this.prototype;
+    bFound.prototype = new Fn();
+    return bFound;
+    
+}
+Foo.prototype.age = 10;
+var newFn = Foo.myBind(obj,1)
+// var name = newFn(2);
+// console.log(name);
+
+var newObj = new newFn(2, 3);
+console.log(newObj instanceof Foo)
+// 能拿到原来函数原型上的属性，继承
+console.dir(newObj)
+```
+
+es6来实现bind：
+
+```javascript
+Function.prototype.bind = function(...rest) {
+    if(typeof this !== 'function') {
+        throw new Error('bind方法只能被函数调用')
+    }
+    const target = rest.shift();
+     if(target == null) {
+        target = window
+    }
+    const that = this;
+    function Fn() {}
+    function bFound(...args) {
+        return  fn.apply(this instanceof bFound ? this : target, rest.concat(args);
+    }
+    Fn.prototype = this.prototype;
+    bFound.prototype = new Fn();
+    return bFound;
+}
+```
+
+## 四、new
+
+普通函数通过new来调用，这个函数就叫构造函数，而new 构造函数的返回结果叫实例对象，构造函数内部的this指向这个实例对象。关于面向对象我们要记住三句话：
+
+- 每个函数都有一个属性叫prototype，prototype是一个对象，对象里面有一个属性constructor指向当前这个函数
+- 每个实例对象都有一个属性`__proto__`,指向所属类的原型
+- 实例对象打点访问某个属性，首先会先在这个实例对象自身查找，再查找对应的构造函数原型，最后再找Object原型上有没有，如果都没有就返回undefined
+
+```javascript
+function Person(name) {
+    this.name = name;
+}
+Person.prototype.say = function() {
+    console.log(this.name)
+}
+var p1 = new Person('张三');
+console.log(p1);
+p1.say();
+```
+
+使用new关键字后发生了什么事：
+
+- 函数内部会自动生成一个实例对象，并将this指向这个对象
+- 实例对象的`__proto__`指向函数的原型
+- 调用该函数，如果改函数返回的是一个对象或者函数，那就最终返回函数的执行结果，如果不是一个对象，就返回这个实例对象
+
+```javascript
+function newFn(fn,...args) {
+    let obj = {};
+    obj.__proto__ = fn.prototype;
+    let res = fn.apply(obj, args);
+    if(res && (typeof res === 'object' || typeof res === 'function')) {
+        return res;
+    }
+    return obj;
+}
+function Person(name) {
+    this.name = name;
+}
+Person.prototype.say = function() {
+    console.log(this.name)
+}
+var p1 = newFn(Person,'张三');
+console.log(p1);
+p1.say();
+```
+
+## 五、总结
+
+自此我们学习了有三个方法来改变`普通函数`内部this指向的，在不同的场景下使用，比如说，我们传参的方式是数组，函数要立即执行，那就选择apply，如果不希望立即调用函数，那就使用bind
+
+- 在面向对象子类继承父类的属性，就用到call方法
+- 在求数组的最大最小值，就利用apply方法，Math.max.apply(null, [1, 5, 2, 4])
+- 不希望立即调用函数，那就使用bind
+
+`es6的箭头函数this是在函数声明的时候就已经确定，call、apply、bind都不能改变其this指向`
